@@ -1,0 +1,754 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>ITC Anomaly Lab — v2.6 MAX (Presets + History)</title>
+<style>
+  :root{
+    --bg:#050608;
+    --panel:#0E1118;
+    --border:rgba(255,255,255,0.1);
+    --text:#E0E6ED;
+    --muted:#7A8599;
+    --accent:#00E5FF; /* Cyan for evidence */
+    --warn:#FFD166;
+    --bad:#FF5C8D;
+    --good:#06D6A0;
+    --radius:12px;
+    --font-mono: "SF Mono", "Menlo", "Consolas", monospace;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg); color:var(--text); height:100vh; overflow:hidden;
+    display:flex; flex-direction:column;
+  }
+  header{
+    padding:12px 20px; border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between;
+    background: rgba(255,255,255,0.02);
+  }
+  h1{margin:0;font-size:16px;font-weight:700;letter-spacing:0.5px;color:var(--accent)}
+  .sub{font-size:11px;color:var(--muted);font-weight:400}
+  
+  .toolbar{
+    display:flex; gap:10px; align-items:center;
+  }
+  button{
+    background:rgba(255,255,255,0.05); border:1px solid var(--border); color:var(--text);
+    padding:8px 14px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;
+    transition: all 0.2s;
+  }
+  button:hover:not(:disabled){background:rgba(255,255,255,0.1); border-color:rgba(255,255,255,0.2)}
+  button.primary{background:var(--accent); color:#000; border-color:var(--accent)}
+  button.primary:hover:not(:disabled){background:#33ebff; box-shadow:0 0 15px rgba(0,229,255,0.4)}
+  button:disabled{opacity:0.5; cursor:not-allowed}
+
+  main{
+    flex:1; display:grid; grid-template-columns: 320px 1fr; gap:0; overflow:hidden;
+  }
+  
+  /* Sidebar */
+  aside{
+    background:var(--panel); border-right:1px solid var(--border);
+    padding:15px; overflow-y:auto; display:flex; flex-direction:column; gap:20px;
+  }
+  .control-group{display:flex; flex-direction:column; gap:10px;}
+  .group-title{font-size:11px; text-transform:uppercase; color:var(--muted); letter-spacing:1px; font-weight:700; margin-bottom:4px;}
+  
+  label{display:flex; align-items:center; justify-content:space-between; font-size:12px; color:var(--muted);}
+  select{
+    width:100%; background:#000; color:var(--text); border:1px solid var(--border);
+    padding:8px; border-radius:6px; outline:none; font-size:12px;
+  }
+  
+  /* Visualization Area */
+  .viz-area{
+    display:grid; grid-template-rows: 2fr 1fr 150px; 
+    background: radial-gradient(circle at 50% 30%, #1a1f2e 0%, #050608 80%);
+    padding:20px; gap:20px; overflow-y:auto;
+  }
+  
+  .card{
+    background:rgba(0,0,0,0.3); border:1px solid var(--border); border-radius:var(--radius);
+    display:flex; flex-direction:column; overflow:hidden; position:relative;
+  }
+  .card-head{
+    padding:10px 15px; border-bottom:1px solid var(--border);
+    display:flex; justify-content:space-between; align-items:center;
+    background:rgba(255,255,255,0.02); font-size:12px; font-weight:600; color:var(--muted);
+  }
+  canvas{display:block; width:100%; height:100%;}
+
+  /* Log */
+  .log-container{
+    font-family:var(--font-mono); font-size:11px; padding:10px; overflow-y:auto;
+    display:flex; flex-direction:column; gap:4px;
+  }
+  .log-entry{padding:2px 0; border-bottom:1px solid rgba(255,255,255,0.03);}
+  .log-time{color:var(--muted); margin-right:8px;}
+  .log-warn{color:var(--warn)}
+  .log-bad{color:var(--bad)}
+  .log-good{color:var(--good)}
+
+  /* Custom Inputs */
+  .toggle-row{display:flex; align-items:center; justify-content:space-between; font-size:12px; padding:4px 0;}
+  input[type="checkbox"]{accent-color:var(--accent);}
+  input[type="range"]{width:100%; accent-color:var(--accent);}
+  
+  /* Status Pills */
+  .status-pill{
+    padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; text-transform:uppercase;
+    background:rgba(255,255,255,0.1); color:var(--muted);
+  }
+  .status-pill.active{background:rgba(6,214,160,0.15); color:var(--good); border:1px solid rgba(6,214,160,0.3);}
+  .status-pill.alert{background:rgba(255,92,141,0.15); color:var(--bad); border:1px solid rgba(255,92,141,0.3);}
+
+  /* Context Warning */
+  #ctxWarn{
+    position:absolute; top:0; left:0; right:0; padding:10px; 
+    background:var(--warn); color:#000; font-size:12px; font-weight:700; text-align:center;
+    z-index:100; display:none;
+  }
+</style>
+</head>
+<body>
+
+<div id="ctxWarn">⚠️ Security Warning: Microphone access blocked. Please open via http://localhost or HTTPS.</div>
+
+<header>
+  <div>
+    <h1>ITC Anomaly Lab <span style="color:#fff; opacity:0.3">|</span> v2.6 MAX</h1>
+    <div class="sub">Robust Multivariate Analysis + Sequential Evidence History</div>
+  </div>
+  <div class="toolbar">
+    <div id="statusIndicator" class="status-pill">System Idle</div>
+    <button id="btnStart" class="primary">Start Audio</button>
+    <button id="btnStop" disabled>Stop</button>
+    <button id="btnCal" disabled>Calibrate (10s)</button>
+    <button id="btnTone">Test Speaker</button>
+  </div>
+</header>
+
+<div style="flex:1; display:flex; overflow:hidden;">
+  <aside>
+    <div class="control-group">
+      <div class="group-title">Mission Preset</div>
+      <select id="selPreset">
+        <option value="custom">Custom Settings</option>
+        <option value="remote" selected>Remote Influence (High Purity)</option>
+        <option value="evp">Standard EVP Session</option>
+        <option value="physical">Physical / Poltergeist (Energy)</option>
+        <option value="debug">Debug / High Sensitivity</option>
+      </select>
+      <div style="font-size:10px; color:var(--muted); line-height:1.4; margin-top:5px;" id="presetDesc">
+        Optimized for remote connection. Strict filtering, long memory, focuses on sustained entropy shifts.
+      </div>
+    </div>
+
+    <div class="control-group">
+      <div class="group-title">Analysis Thresholds</div>
+      <label>
+        <span>Sensitivity (Alpha)</span>
+        <span id="valAlpha">0.001</span>
+      </label>
+      <input type="range" id="rngAlpha" min="0.0001" max="0.05" step="0.0001" value="0.001">
+      
+      <label>
+        <span>Robust Cutoff</span>
+        <span id="valCut">4.0</span>
+      </label>
+      <input type="range" id="rngCut" min="2.0" max="10.0" step="0.1" value="4.0">
+    </div>
+
+    <div class="control-group">
+      <div class="group-title">Active Modalities</div>
+      <div class="toggle-row"><label>Spectral Entropy</label><input type="checkbox" id="chkSpec" checked></div>
+      <div class="toggle-row"><label>Complexity (Perm/Sample)</label><input type="checkbox" id="chkCx" checked></div>
+      <div class="toggle-row"><label>MFCC (Timbre)</label><input type="checkbox" id="chkMfcc"></div>
+      <div class="toggle-row"><label>Time Domain (Energy)</label><input type="checkbox" id="chkTime" checked></div>
+    </div>
+
+    <div class="control-group">
+      <div class="group-title">Advanced Logic</div>
+      <div class="toggle-row">
+        <label title="Only update baseline when no anomaly is detected">Clean Baseline Update</label>
+        <input type="checkbox" id="chkClean" checked>
+      </div>
+      <div class="toggle-row">
+        <label title="Sequential Probability Ratio Test">Martingale Evidence</label>
+        <input type="checkbox" id="chkMart" checked>
+      </div>
+    </div>
+
+    <div style="margin-top:auto; padding-top:20px; border-top:1px solid var(--border);">
+      <div class="group-title">System Health</div>
+      <div class="toggle-row"><span>Sample Rate</span><span id="dispSR" style="color:#fff">-</span></div>
+      <div class="toggle-row"><span>Baseline Frames</span><span id="dispWin" style="color:#fff">0</span></div>
+      <div class="toggle-row"><span>Dimensions</span><span id="dispDim" style="color:#fff">-</span></div>
+    </div>
+  </aside>
+
+  <main class="viz-area">
+    <div class="card">
+      <div class="card-head">
+        <span>EVIDENCE TREND (Sustained Anomaly)</span>
+        <span id="valEvidence" style="color:var(--accent)">0.00</span>
+      </div>
+      <canvas id="cvHistory"></canvas>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <span>SIGNAL SPECTRUM</span>
+        <span id="valM2">m²: 0.00</span>
+      </div>
+      <canvas id="cvSpec"></canvas>
+    </div>
+
+    <div class="card">
+      <div class="card-head">EVENT LOG</div>
+      <div class="log-container" id="logBox"></div>
+    </div>
+  </main>
+</div>
+
+<script>
+/**
+ * ITC Anomaly Lab v2.6 MAX
+ * - Robust M-Estimation for Baseline
+ * - Conformal Prediction for P-Values
+ * - Martingale for Sequential Evidence
+ * - AudioWorklet Architecture
+ */
+
+'use strict';
+
+// --- MATH KERNEL ---
+
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+const mean = (arr) => arr.reduce((a,b)=>a+b,0)/arr.length;
+
+// Robust Statistics (Median & MAD)
+const median = (arr) => {
+  const s = [...arr].sort((a,b)=>a-b);
+  const mid = Math.floor(s.length/2);
+  return s.length%2!==0 ? s[mid] : (s[mid-1]+s[mid])/2;
+};
+const mad = (arr, med) => {
+  const devs = arr.map(x => Math.abs(x - med));
+  return median(devs) * 1.4826; // Scaled for normal consistency
+};
+
+// Cholesky Decomposition (Robust)
+function cholesky(A) {
+  const n = A.length;
+  const L = Array.from({length:n}, ()=>new Float32Array(n));
+  for(let i=0; i<n; i++){
+    for(let j=0; j<=i; j++){
+      let s = A[i][j];
+      for(let k=0; k<j; k++) s -= L[i][k]*L[j][k];
+      if(i===j){
+        if(s <= 0) return null; // Not PD
+        L[i][j] = Math.sqrt(s);
+      } else {
+        L[i][j] = s / L[j][j];
+      }
+    }
+  }
+  return L;
+}
+
+function cholSolve(L, b) {
+  const n = L.length;
+  const y = new Float32Array(n);
+  for(let i=0; i<n; i++){
+    let s = b[i];
+    for(let k=0; k<i; k++) s -= L[i][k]*y[k];
+    y[i] = s/L[i][i];
+  }
+  const x = new Float32Array(n);
+  for(let i=n-1; i>=0; i--){
+    let s = y[i];
+    for(let k=i+1; k<n; k++) s -= L[k][i]*x[k];
+    x[i] = s/L[i][i];
+  }
+  return x;
+}
+
+// Robust Covariance Estimation (Winnowing Outliers)
+function robustCov(data) {
+  const n = data.length;
+  if(n < 10) return null;
+  const d = data[0].length;
+  
+  // 1. Compute Median & MAD for each dimension
+  const med = new Float32Array(d);
+  const scale = new Float32Array(d);
+  for(let j=0; j<d; j++){
+    const col = data.map(row=>row[j]);
+    med[j] = median(col);
+    scale[j] = Math.max(1e-6, mad(col, med[j]));
+  }
+
+  // 2. Standardize data
+  const Z = data.map(row => row.map((v,j) => (v - med[j])/scale[j]));
+
+  // 3. Simple Covariance on Z (Could iterate Tukey weights here, but simplified for JS speed)
+  const mu = new Float32Array(d); // Standardized mean ~ 0
+  const S = Array.from({length:d}, ()=>new Float32Array(d));
+  
+  for(let i=0; i<n; i++){
+    for(let j=0; j<d; j++){
+      for(let k=0; k<=j; k++){
+        S[j][k] += Z[i][j]*Z[i][k];
+      }
+    }
+  }
+  
+  // Normalize & Regularize
+  for(let j=0; j<d; j++){
+    for(let k=0; k<=j; k++){
+      S[j][k] /= (n-1);
+      if(j!==k) S[k][j] = S[j][k];
+    }
+    S[j][j] += 0.01; // Ridge
+  }
+
+  return { med, scale, S };
+}
+
+function mahalanobis(model, vec) {
+  const { med, scale, S } = model;
+  const d = vec.length;
+  const z = new Float32Array(d);
+  for(let i=0; i<d; i++) z[i] = (vec[i] - med[i]) / scale[i];
+  
+  const L = cholesky(S);
+  if(!L) return 1000; // Fail safe
+  
+  const y = cholSolve(L, z); // S^-1 * z via Cholesky
+  let dist = 0;
+  for(let i=0; i<d; i++) dist += z[i]*y[i]; // z^T * S^-1 * z
+  return dist;
+}
+
+// --- APP CONTROLLER ---
+
+const App = {
+  ctx: null,
+  node: null,
+  stream: null,
+  running: false,
+  calibrating: false,
+  
+  // Config
+  config: {
+    alpha: 0.001,
+    cut: 4.0,
+    win: 400,
+    mods: { spec:true, cx:true, mfcc:false, time:true },
+    clean: true,
+    mart: true
+  },
+  
+  // State
+  baseline: [], // History of feature vectors
+  scores: [],   // History of m2 scores for Conformal Prediction
+  model: null,
+  evidence: 0,
+  historyGraph: new Array(300).fill(0),
+  
+  // Visuals
+  analyser: null,
+  freqData: null,
+  
+  init() {
+    this.bindUI();
+    this.applyPreset('remote'); // Default to best
+    if(!window.isSecureContext && location.hostname !== 'localhost') {
+      document.getElementById('ctxWarn').style.display = 'block';
+    }
+  },
+  
+  bindUI() {
+    const el = (id) => document.getElementById(id);
+    
+    el('btnStart').onclick = () => this.start();
+    el('btnStop').onclick = () => this.stop();
+    el('btnCal').onclick = () => this.calibrate();
+    el('btnTone').onclick = () => this.playTone();
+    
+    el('selPreset').onchange = (e) => this.applyPreset(e.target.value);
+    
+    // Sliders
+    el('rngAlpha').oninput = (e) => { this.config.alpha = parseFloat(e.target.value); el('valAlpha').innerText = this.config.alpha; };
+    el('rngCut').oninput = (e) => { this.config.cut = parseFloat(e.target.value); el('valCut').innerText = this.config.cut; };
+    
+    // Toggles
+    ['chkSpec','chkCx','chkMfcc','chkTime','chkClean','chkMart'].forEach(id => {
+      el(id).onchange = () => {
+        this.config.mods = {
+          spec: el('chkSpec').checked,
+          cx: el('chkCx').checked,
+          mfcc: el('chkMfcc').checked,
+          time: el('chkTime').checked
+        };
+        this.config.clean = el('chkClean').checked;
+        this.config.mart = el('chkMart').checked;
+        this.resetModel(); // Feature space changed
+      };
+    });
+  },
+  
+  applyPreset(key) {
+    const el = (id) => document.getElementById(id);
+    const p = {
+      remote: { alpha: 0.001, cut: 4.0, win: 400, mfcc: false, desc: "High purity. Resists noise. Highlights sustained shifts." },
+      evp:    { alpha: 0.01,  cut: 3.0, win: 200, mfcc: true,  desc: "Standard sensitivity. MFCC enabled for voice detection." },
+      physical:{alpha: 0.0005,cut: 6.0, win: 500, mfcc: false, desc: "Extreme outlier detection for energy bursts." },
+      debug:  { alpha: 0.05,  cut: 2.0, win: 100, mfcc: true,  desc: "Noisy. Triggers on everything." },
+      custom: { desc: "User defined." }
+    }[key] || {};
+    
+    if(key === 'custom') return;
+    
+    this.config.alpha = p.alpha; el('rngAlpha').value = p.alpha; el('valAlpha').innerText = p.alpha;
+    this.config.cut = p.cut; el('rngCut').value = p.cut; el('valCut').innerText = p.cut;
+    this.config.win = p.win; // Internal buffer size
+    el('chkMfcc').checked = p.mfcc;
+    this.config.mods.mfcc = p.mfcc;
+    el('presetDesc').innerText = p.desc;
+    
+    this.resetModel();
+  },
+  
+  async start() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new AC({ latencyHint: 'playback' });
+      await this.ctx.resume();
+      
+      this.stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
+      });
+      
+      const src = this.ctx.createMediaStreamSource(this.stream);
+      this.analyser = this.ctx.createAnalyser();
+      this.analyser.fftSize = 2048;
+      this.analyser.smoothingTimeConstant = 0.2;
+      this.freqData = new Float32Array(this.analyser.frequencyBinCount);
+      
+      // Worklet
+      const blob = new Blob([`
+        class P extends AudioWorkletProcessor {
+          constructor() { super(); this.buf = []; }
+          process(inputs) {
+            const inp = inputs[0][0];
+            if(inp && inp.length) {
+              this.port.postMessage(inp);
+            }
+            return true;
+          }
+        }
+        registerProcessor('proc', P);
+      `], {type: 'application/javascript'});
+      
+      await this.ctx.audioWorklet.addModule(URL.createObjectURL(blob));
+      this.node = new AudioWorkletNode(this.ctx, 'proc');
+      
+      src.connect(this.analyser);
+      src.connect(this.node);
+      this.node.connect(this.ctx.destination); // Keep graph alive
+      
+      // Buffer handling
+      let buffer = new Float32Array(0);
+      const CHUNK = 2048;
+      
+      this.node.port.onmessage = (e) => {
+        const newDat = e.data;
+        const tmp = new Float32Array(buffer.length + newDat.length);
+        tmp.set(buffer);
+        tmp.set(newDat, buffer.length);
+        buffer = tmp;
+        
+        if(buffer.length >= CHUNK) {
+          this.processFrame(buffer.slice(0, CHUNK));
+          buffer = buffer.slice(CHUNK);
+        }
+      };
+      
+      this.running = true;
+      document.getElementById('btnStart').disabled = true;
+      document.getElementById('btnStop').disabled = false;
+      document.getElementById('btnCal').disabled = false;
+      document.getElementById('statusIndicator').className = "status-pill active";
+      document.getElementById('statusIndicator').innerText = "SYSTEM ACTIVE";
+      document.getElementById('dispSR').innerText = this.ctx.sampleRate + " Hz";
+      
+      this.loopVis();
+      this.log("Audio Engine Started. Ready for Calibration.", "good");
+      
+    } catch(e) {
+      alert("Audio Init Failed: " + e);
+    }
+  },
+  
+  stop() {
+    if(this.ctx) this.ctx.close();
+    this.running = false;
+    document.getElementById('btnStart').disabled = false;
+    document.getElementById('btnStop').disabled = true;
+    document.getElementById('btnCal').disabled = true;
+    document.getElementById('statusIndicator').className = "status-pill";
+    document.getElementById('statusIndicator').innerText = "SYSTEM IDLE";
+  },
+  
+  playTone() {
+    if(!this.ctx) { alert("Start Audio first."); return; }
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.connect(g);
+    g.connect(this.ctx.destination);
+    osc.frequency.value = 440;
+    g.gain.value = 0.1;
+    osc.start();
+    setTimeout(() => osc.stop(), 500);
+    this.log("Test Tone Played", "info");
+  },
+  
+  resetModel() {
+    this.baseline = [];
+    this.scores = [];
+    this.model = null;
+    this.evidence = 0;
+    this.historyGraph.fill(0);
+    document.getElementById('dispWin').innerText = "0";
+  },
+  
+  async calibrate() {
+    if(!this.running) return;
+    this.resetModel();
+    this.calibrating = true;
+    document.getElementById('btnCal').innerText = "Calibrating...";
+    document.getElementById('btnCal').disabled = true;
+    this.log("Calibration Started. Keep silence.", "warn");
+    
+    setTimeout(() => {
+      this.calibrating = false;
+      
+      // Build Model
+      if(this.baseline.length > 50) {
+        this.model = robustCov(this.baseline);
+        if(this.model) {
+          this.log(`Calibration Done. Baseline size: ${this.baseline.length}`, "good");
+        } else {
+          this.log("Calibration Failed (singular matrix). Try again.", "bad");
+        }
+      } else {
+        this.log("Not enough data for calibration.", "bad");
+      }
+      
+      document.getElementById('btnCal').innerText = "Calibrate (10s)";
+      document.getElementById('btnCal').disabled = false;
+    }, 10000);
+  },
+  
+  // --- SIGNAL PROCESSING ---
+  
+  processFrame(pcm) {
+    if(!this.running) return;
+    
+    // Feature Extraction
+    const feats = this.extractFeatures(pcm);
+    document.getElementById('dispDim').innerText = feats.length;
+    
+    if(this.calibrating) {
+      this.baseline.push(feats);
+      if(this.baseline.length > this.config.win) this.baseline.shift();
+      document.getElementById('dispWin').innerText = this.baseline.length;
+      return;
+    }
+    
+    if(!this.model) return; // Wait for calibration
+    
+    // 1. Scoring (Robust Mahalanobis)
+    const m2 = mahalanobis(this.model, feats);
+    
+    // 2. Conformal Prediction (P-Value)
+    // Add current score to history to rank it
+    const scoreHist = [...this.scores, m2]; 
+    const rank = scoreHist.filter(s => s >= m2).length;
+    const p = rank / (scoreHist.length + 1);
+    
+    // 3. Martingale (Evidence)
+    // Standard betting function: if p is small, multiplier > 1
+    const epsilon = 0.5; // Betting aggression
+    const bet = epsilon * Math.pow(p, epsilon - 1);
+    this.evidence = Math.max(0, this.evidence + Math.log10(bet));
+    
+    // Clamp evidence decay if not reinforced
+    if(bet < 1) this.evidence *= 0.98; 
+    
+    // 4. Update buffers based on logic
+    const isAnomaly = p < this.config.alpha;
+    
+    if(this.config.clean) {
+      // Only update baseline if NOT anomaly
+      if(!isAnomaly) {
+        this.scores.push(m2);
+        if(this.scores.length > 500) this.scores.shift();
+      }
+    } else {
+      this.scores.push(m2);
+      if(this.scores.length > 500) this.scores.shift();
+    }
+    
+    // 5. Update UI Data
+    this.historyGraph.shift();
+    this.historyGraph.push(this.evidence);
+    
+    document.getElementById('valM2').innerText = "m²: " + m2.toFixed(2);
+    document.getElementById('valEvidence').innerText = this.evidence.toFixed(2);
+    
+    if(isAnomaly) {
+      document.getElementById('statusIndicator').className = "status-pill alert";
+      document.getElementById('statusIndicator').innerText = "ANOMALY DETECTED";
+      if(this.evidence > 3.0) { // Log significant hits
+        this.log(`HIT! p=${p.toFixed(4)} Ev=${this.evidence.toFixed(2)}`, "bad");
+      }
+    } else {
+      document.getElementById('statusIndicator').className = "status-pill active";
+      document.getElementById('statusIndicator').innerText = "MONITORING";
+    }
+  },
+  
+  extractFeatures(pcm) {
+    const res = [];
+    const size = pcm.length;
+    
+    // Time Domain
+    if(this.config.mods.time) {
+      let sumSq = 0;
+      for(let x of pcm) sumSq += x*x;
+      const rms = Math.sqrt(sumSq/size);
+      res.push(Math.log10(rms + 1e-9)); // Log Energy
+    }
+    
+    // Spectral (FFT required, we assume simple proxy here for speed or use analyser data)
+    // We will pull from AnalyserNode for Frequency Data to save JS CPU
+    if(this.analyser) {
+      this.analyser.getFloatFrequencyData(this.freqData);
+      
+      if(this.config.mods.spec) {
+        // Centroid
+        let num=0, den=0;
+        for(let i=0; i<this.freqData.length; i++) {
+          const mag = Math.pow(10, this.freqData[i]/20); // dB to lin
+          num += i * mag;
+          den += mag;
+        }
+        res.push(den > 0 ? num/den : 0);
+        
+        // Flatness (Geomean/Arithmean)
+        // Simplified entropy proxy
+        const sumP = den; 
+        if(sumP > 0) {
+          let ent = 0;
+          for(let i=0; i<this.freqData.length; i+=4) { // Downsample
+             const p = Math.pow(10, this.freqData[i]/20) / sumP;
+             if(p>0) ent -= p * Math.log(p);
+          }
+          res.push(ent);
+        } else {
+          res.push(0);
+        }
+      }
+    }
+    
+    // Complexity (Approximate Permutation Entropy)
+    if(this.config.mods.cx) {
+      let c=0;
+      for(let i=0; i<size-2; i+=4) {
+        if(pcm[i] < pcm[i+1] && pcm[i+1] < pcm[i+2]) c++;
+        else if(pcm[i] > pcm[i+1] && pcm[i+1] > pcm[i+2]) c++;
+      }
+      res.push(c/(size/4));
+    }
+    
+    return res;
+  },
+  
+  // --- VISUALIZATION ---
+  
+  log(msg, type="info") {
+    const box = document.getElementById('logBox');
+    const row = document.createElement('div');
+    row.className = "log-entry";
+    const ts = new Date().toLocaleTimeString();
+    let c = "";
+    if(type==="bad") c="log-bad";
+    if(type==="good") c="log-good";
+    if(type==="warn") c="log-warn";
+    row.innerHTML = `<span class="log-time">[${ts}]</span><span class="${c}">${msg}</span>`;
+    box.prepend(row);
+    if(box.children.length > 50) box.lastChild.remove();
+  },
+  
+  loopVis() {
+    if(!this.running) return;
+    requestAnimationFrame(() => this.loopVis());
+    
+    // 1. History Graph (Evidence)
+    const cvH = document.getElementById('cvHistory');
+    const ctxH = cvH.getContext('2d');
+    cvH.width = cvH.offsetWidth; cvH.height = cvH.offsetHeight;
+    const w = cvH.width; const h = cvH.height;
+    
+    ctxH.clearRect(0,0,w,h);
+    ctxH.strokeStyle = "#00E5FF";
+    ctxH.lineWidth = 2;
+    ctxH.beginPath();
+    
+    const maxEv = 10; // Cap visual range
+    for(let i=0; i<this.historyGraph.length; i++) {
+      const x = (i / (this.historyGraph.length-1)) * w;
+      const y = h - (Math.min(this.historyGraph[i], maxEv) / maxEv) * h;
+      if(i===0) ctxH.moveTo(x,y); else ctxH.lineTo(x,y);
+    }
+    ctxH.stroke();
+    
+    // Grid line for threshold
+    ctxH.strokeStyle = "rgba(255, 92, 141, 0.5)";
+    ctxH.setLineDash([5,5]);
+    ctxH.beginPath();
+    const threshY = h - (3.0 / maxEv) * h; // Threshold visual at 3.0
+    ctxH.moveTo(0, threshY); ctxH.lineTo(w, threshY);
+    ctxH.stroke();
+    ctxH.setLineDash([]);
+    
+    // 2. Spectrum
+    const cvS = document.getElementById('cvSpec');
+    const ctxS = cvS.getContext('2d');
+    cvS.width = cvS.offsetWidth; cvS.height = cvS.offsetHeight;
+    
+    ctxS.fillStyle = "#000";
+    ctxS.fillRect(0,0,cvS.width, cvS.height);
+    
+    if(this.freqData) {
+      const binW = cvS.width / this.freqData.length;
+      ctxS.fillStyle = "#2EE6A6";
+      for(let i=0; i<this.freqData.length; i++) {
+        const val = (this.freqData[i] + 140) * 2; // Scaling dB
+        ctxS.fillRect(i*binW, cvS.height - val, binW, val);
+      }
+    }
+  }
+};
+
+window.onload = () => App.init();
+
+</script>
+</body>
+</html>
